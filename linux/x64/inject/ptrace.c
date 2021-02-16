@@ -150,7 +150,7 @@ int ptrace_call(pid_t pid, void* addr, std_width *params, int num_params, struct
     //write return address 0 to make process hang up when call finish
     std_width tmp_addr = 0x00;      
     regs->rsp -= sizeof(std_width);      
-    ptrace_writedata(pid, (uint8_t*)regs->rsp, (char *)&tmp_addr, sizeof(tmp_addr));       
+    ptrace_writedata(pid, (uint8_t*)regs->rsp, (uint8_t *)&tmp_addr, sizeof(std_width));       
     
     regs->rip = addr;      
       
@@ -307,7 +307,7 @@ description:
 */    
 std_width ptrace_retval(struct pt_regs *regs)      
 {              
-    return (void*)(regs->rax);
+    return regs->rax;
 }      
 
 /*
@@ -321,7 +321,7 @@ description:
 */    
 std_width ptrace_pc(struct pt_regs *regs)      
 {      
-    return (void*)(regs->rip);
+    return regs->rip;
 }      
 
 /*
@@ -338,9 +338,9 @@ return:
 description:
 	call address and get return register state
 */
-int ptrace_call_wrapper(pid_t pid, const char *func_name, void * addr, long * params, int num_param, struct pt_regs * regs)       
+int ptrace_call_wrapper(pid_t pid, const char *func_name, void * addr, std_width * params, int num_param, struct pt_regs * regs)       
 {         
-    if(ptrace_call(pid, (uintptr_t)addr, params, num_param, regs) == -1)
+    if(ptrace_call(pid, addr, params, num_param, regs) == -1)
 	{
 		LOGD("ptrace_call_wrapper[%s]: ptrace_call failed\n",func_name);
 		return -1;   

@@ -4,12 +4,12 @@
 #define FUNCTION_NAME_ADDR_OFFSET       0x100    
 #define FUNCTION_PARAM_ADDR_OFFSET      0x200
 
-static char libc_link[] = "/lib32/libc.so.6";
-static char libc_path[100] = {0};
+static char libc_path[] = "/system/lib64/libc.so";
+static char linker_path[] = "/system/bin/linker64";
 
 /*
 function: get_module_base
-pararm:
+param:
 	pid: as all known, -1 is self
 	module_name: module name
 return:
@@ -44,7 +44,7 @@ static void* get_module_base(pid_t pid, const char* module_name)
 			{  
                 //split string by '-'
                 pch = strtok(line, "-");  
-                addr = (void*)strtoul(pch, NULL, 16);
+                addr = (void*)strtoull(pch, NULL, 16);
                 break;      
             }      
         }      
@@ -57,7 +57,7 @@ static void* get_module_base(pid_t pid, const char* module_name)
 
 /*
 function: get_remote_addr
-pararm:
+param:
 	pid: as all known
 	module_name: module name
 	local_addr: function address in self process
@@ -97,7 +97,7 @@ static void* get_remote_addr(pid_t pid, char* module_name, void* local_addr)
 //¸ù¾ÝnameÕÒµ½pid  
 /*
 function: find_pid_of
-pararm:
+param:
 	process_name: process name
 return:
 	success return 0, failed return -1
@@ -150,46 +150,9 @@ static int find_pid_of(const char *process_name)
 
 static int get_dl_func(int pid, char* module_name, void **dl_open, void **dl_sym, void **dl_close)
 {
-	//__libc_dlopen_mode, __libc_dlsym, __libc_dlclose
-    void *local_handle, *remote_handle, *so_handle;   
-    void *ret_addr;
-    
-    *dl_open = 0;
-    *dl_sym = 0;
-    *dl_close = 0;
-    
-    so_handle = dlopen(module_name, RTLD_LAZY);
-	local_handle = get_module_base(-1, module_name);
-    remote_handle = get_module_base(pid, module_name);
-    
-    if(remote_handle == 0)
-    {
-    	LOGD("get_dl_func[remote]: module %s not found\n", module_name);
-		return 0;	
-	}
-	
-	if(local_handle == 0)
-	{
-    	LOGD("get_dl_func[local]: module %s not found\n", module_name); 
-		return 0;		
-	}
-    
-	void *loc_dl_open = dlsym(so_handle, "__libc_dlopen_mode");
-	void *loc_dl_sym = dlsym(so_handle, "__libc_dlsym");
-	void *loc_dl_close = dlsym(so_handle, "__libc_dlclose");
-
-    //LOGD("get_dl_func: local[%p], remote[%p]\n", local_handle, remote_handle); 
-	//LOGD("get_dl_func: loc_dl_open[%p] loc_dl_sym[%p] loc_dl_close[%p]\n", loc_dl_open, loc_dl_sym, loc_dl_close);
-	     
-    *dl_open = (void *)((uintptr_t)loc_dl_open - (uintptr_t)local_handle + (uintptr_t)remote_handle);
-    *dl_sym = (void *)((uintptr_t)loc_dl_sym  - (uintptr_t)local_handle + (uintptr_t)remote_handle);
-    *dl_close = (void *)((uintptr_t)loc_dl_close - (uintptr_t)local_handle + (uintptr_t)remote_handle);
-    
-	//X86 and X64 processor should add 2 because interrupt
-//	*dl_open += 2;  
-//	*dl_sym += 2;
-//	*dl_close += 2;
-	   
+    *dl_open = get_remote_addr(pid,linker_path,dlopen);
+    *dl_sym = get_remote_addr(pid,linker_path,dlsym);
+    *dl_close = get_remote_addr(pid,linker_path,dlclose);
 	return 1;
 } 
   
@@ -200,16 +163,7 @@ static int inject_remote_process(pid_t target_pid, char *library_path, char *fun
     uint8_t *map_base = NULL;   
     struct pt_regs regs, original_regs;
     std_width parameters[10] = {0}; 
-	       
-	//***************************************************************
- 	//get libc module path
-	if(readlink(libc_link,libc_path,sizeof(libc_path)-1) == -1)
-	{
-		LOGD("read dl and libc link failed\n");
-		return ret;
-	}
-  	LOGD("libc path: %s\n", libc_path);
-	      
+		      
     if(ptrace_attach(target_pid) == -1)
 	{
 		return ret;
@@ -230,8 +184,6 @@ static int inject_remote_process(pid_t target_pid, char *library_path, char *fun
     {
     	goto __exit__;
 	}
-    //add 2 because interrupt
-    mmap_addr += 2;
 	
 	get_dl_func(target_pid, libc_path, &dlopen_addr, &dlsym_addr, &dlclose_addr);
 	LOGD("[dlopen]:%p, [dlsym]:%p, [dlclose]:%p\n", dlopen_addr, dlsym_addr, dlclose_addr);	  
@@ -267,9 +219,9 @@ static int inject_remote_process(pid_t target_pid, char *library_path, char *fun
     //write so path into memory
     ptrace_writedata(target_pid, map_base, (uint8_t*)library_path, strlen(library_path) + 1);    
     
-	//dlopen("xxx.so", RTLD_NOW | RTLD_GLOBAL)
+	//dlopen("xxx.so", RTLD_NOW | RTLD_GLOBAL)        
     parameters[0] = map_base;         
-    parameters[1] = RTLD_NOW;//| RTLD_GLOBAL;
+    parameters[1] = RTLD_NOW| RTLD_GLOBAL;       
     if (ptrace_call_wrapper(target_pid, "dlopen", dlopen_addr, parameters, 2, &regs) == -1)
 	{
 		LOGD("inject_remote_process: call dlopen failed\n");

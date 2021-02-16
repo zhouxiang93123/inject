@@ -2,6 +2,8 @@ objects = test_so.o
 
 test_so : $(objects)
 	cc -o test_so.so $(objects) -shared -m32
+test_so.o : test_so.c
+	cc -c test_so.c -m32
 
 .PHONY : clean
 clean :

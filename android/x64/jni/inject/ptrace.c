@@ -3,9 +3,10 @@
 
 #define LOGD(fmt, ...)  printf(fmt, ##__VA_ARGS__) 
 
+
 /*
 function: ptrace_readdata
-pararm:
+param:
 	pid: as all known
 	src: address where read
 	buf: buffer
@@ -52,7 +53,7 @@ int ptrace_readdata(pid_t pid,  uint8_t *src, uint8_t *buf, size_t size)
 
 /*
 function: ptrace_writedata
-pararm:
+param:
 	pid: as all known
 	src: address where write
 	buf: buffer
@@ -104,41 +105,60 @@ int ptrace_writedata(pid_t pid, uint8_t *dest, uint8_t *data, size_t size)
   
 /*
 function: ptrace_call
-pararm:
+param:
 	pid: as all known
 	addr: address where called
-	params: pararm when called
-	num_params: pararm num when called
+	params: param when called
+	num_params: param num when called
 	pt_regs: current register state
 return:
 	success return 0, failed return -1
 description:
 	call specified address
 */
+#define max_register_param   8
+#define CPSR_T_MASK	         (1u<<5) 
 int ptrace_call(pid_t pid, void* addr, std_width *params, int num_params, struct pt_regs * regs)      
 {      
-	//x86 call in linux
-	//stack 
+	//x86_64 call in arm
+	//note: param transmit by register and stackavail
+	//first x0-x7
+	//second stack
 	
-	if(num_params > 0)
+	int i;
+	 
+    for (i=0; i<num_params && i<max_register_param; i++) 
+	{      
+		regs->regs[i] = params[i];
+	} 
+	
+	if(num_params > max_register_param)
 	{
-		int stack_params_num = num_params;
-		regs->esp -= (stack_params_num) * sizeof(std_width);      
-		ptrace_writedata(pid, (void *)regs->esp, (uint8_t *)params, (stack_params_num) * sizeof(std_width));	
+		int stack_params_num = num_params - max_register_param;
+		regs->sp -= (stack_params_num) * sizeof(std_width);      
+		ptrace_writedata(pid, (void *)regs->sp, (uint8_t *)&params[max_register_param], (stack_params_num) * sizeof(std_width));	
 	}
     
-    //write return address 0 to make process hang up when call finish
-    std_width tmp_addr = 0x00;      
-    regs->esp -= sizeof(std_width);      
-    ptrace_writedata(pid, (uint8_t*)regs->esp, (uint8_t *)&tmp_addr, sizeof(std_width));       
+    //write return address 0 to make process hang up when call finish      
+    regs->regs[30] = 0; //regs->lr         
     
-    regs->eip = addr;      
-      
+    regs->pc = addr;
+    //arm or thumb
+	if (regs->pc & 1) 
+	{      
+		//thumb    
+		regs->pc &= (~1u); 
+		regs->pstate |= CPSR_T_MASK;      
+	} else 
+	{      
+		//arm
+		regs->pstate &= ~CPSR_T_MASK;      
+	} 
+    
     if(ptrace_setregs(pid, regs) == -1 || ptrace_continue(pid) == -1) 
 	{    
         return -1;      
-    }      
-    
+    }
     
     //wait something ?
     int stat = 0;    
@@ -158,7 +178,7 @@ int ptrace_call(pid_t pid, void* addr, std_width *params, int num_params, struct
    
 /*
 function: ptrace_getregs
-pararm:
+param:
 	pid: as all known
 	pt_regs: current register state		
 return:
@@ -167,8 +187,14 @@ description:
 	get current register state
 */
 int ptrace_getregs(pid_t pid, struct pt_regs * regs)      
-{      
-    if(ptrace(PTRACE_GETREGS, pid, NULL, regs) < 0) 
+{
+	int regset = NT_PRSTATUS;
+	struct iovec ioVec;
+	
+	ioVec.iov_base = regs;
+	ioVec.iov_len = sizeof(*regs);
+	
+    if(ptrace(PTRACE_GETREGSET, pid, (void*)regset, &ioVec) < 0) 
 	{      
         LOGD("ptrace_getregs failed\n");      
         return -1;      
@@ -179,7 +205,7 @@ int ptrace_getregs(pid_t pid, struct pt_regs * regs)
 
 /*
 function: ptrace_setregs
-pararm:
+param:
 	pid: as all known
 	pt_regs: register state	which set	
 return:
@@ -189,8 +215,13 @@ description:
 */
 int ptrace_setregs(pid_t pid, struct pt_regs * regs)      
 {       
-
-    if(ptrace(PTRACE_SETREGS, pid, NULL, regs) < 0) 
+	int regset = NT_PRSTATUS;
+	struct iovec ioVec;
+	
+	ioVec.iov_base = regs;
+	ioVec.iov_len = sizeof(*regs);
+	
+    if(ptrace(PTRACE_SETREGSET, pid, (void*)regset, &ioVec) < 0) 
 	{      
         LOGD("ptrace_setregs failed\n");      
         return -1;      
@@ -201,7 +232,7 @@ int ptrace_setregs(pid_t pid, struct pt_regs * regs)
 
 /*
 function: ptrace_continue
-pararm:
+param:
 	pid: as all known	
 return:
 	success return 0, failed return -1
@@ -221,7 +252,7 @@ int ptrace_continue(pid_t pid)
    
 /*
 function: ptrace_attach
-pararm:
+param:
 	pid: as all known	
 return:
 	success return 0, failed return -1
@@ -258,7 +289,7 @@ int ptrace_attach(pid_t pid)
    
 /*
 function: ptrace_detach
-pararm:
+param:
 	pid: as all known	
 return:
 	success return 0, failed return -1
@@ -278,7 +309,7 @@ int ptrace_detach(pid_t pid)
   
 /*
 function: ptrace_retval
-pararm:
+param:
 	regs: register state
 return:
 	process return value
@@ -287,12 +318,12 @@ description:
 */    
 std_width ptrace_retval(struct pt_regs *regs)      
 {              
-    return regs->eax;
+    return regs->regs[0];	//regs->r0
 }      
 
 /*
 function: ptrace_pc
-pararm:
+param:
 	regs: register state
 return:
 	process implement address
@@ -301,17 +332,17 @@ description:
 */    
 std_width ptrace_pc(struct pt_regs *regs)      
 {      
-    return regs->eip;
+    return regs->pc;
 }      
 
 /*
 function: ptrace_call_wrapper
-pararm:
+param:
 	pid: as all known	
 	func_name: function name
 	addr: address where called
-	params: pararm when called
-	num_params: pararm num when called	
+	params: param when called
+	num_params: param num when called	
 	regs: current register state	
 return:
 	success return 0, failed return -1
@@ -333,7 +364,7 @@ int ptrace_call_wrapper(pid_t pid, const char *func_name, void * addr, std_width
 	}   
     
     //if pc is no zero, call may be failed depend on ptrace_call
-    LOGD("ptrace_call_wrapper[%s]: pid=%d return value=%X, pc=%X\n", func_name, pid, ptrace_retval(regs), ptrace_pc(regs)); 
+    LOGD("ptrace_call_wrapper[%s]: pid=%d return value=%llX, pc=%llX\n", func_name, pid, ptrace_retval(regs), ptrace_pc(regs)); 
 	
 	if(ptrace_pc(regs) != 0)
 		return -1;

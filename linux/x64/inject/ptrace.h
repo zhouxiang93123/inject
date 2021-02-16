@@ -27,6 +27,6 @@ int ptrace_attach(pid_t pid);
 int ptrace_detach(pid_t pid);
 std_width ptrace_retval(struct pt_regs * regs);
 std_width ptrace_pc(struct pt_regs * regs);
-int ptrace_call_wrapper(pid_t pid, const char *func_name, void * addr, long * params, int num_param, struct pt_regs * regs);
+int ptrace_call_wrapper(pid_t pid, const char *func_name, void * addr, std_width * params, int num_param, struct pt_regs * regs);
 
 #endif	//__PTRACE_H__ ends
