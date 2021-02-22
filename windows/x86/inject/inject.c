@@ -18,7 +18,7 @@ static int find_pid_of(char *process_name)
 	
 	entry.dwSize = sizeof(PROCESSENTRY32);
 	
-	snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, NULL);
+	snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
 	
 	if (Process32First(snapshot, &entry) == TRUE)
 	{
@@ -56,8 +56,8 @@ static void* get_remote_addr(const char *func_name)
 
 static int inject_remote_process(pid_t target_pid, char *library_path)
 {
-	HANDLE proc_handle, thread_handle;
-	void *LoadLibrary_addr, *FreeLibrary_addr;
+	HANDLE proc_handle, thread_handle, dll_handle;
+	void *LoadLibrary_addr, *FreeLibrary_addr, *GetLastError_addr;
 	void *map_base = NULL;
 	DWORD ret;
 	
@@ -93,21 +93,47 @@ static int inject_remote_process(pid_t target_pid, char *library_path)
 	
 	LoadLibrary_addr = get_remote_addr("LoadLibraryA");
 	FreeLibrary_addr = get_remote_addr("FreeLibrary");
-	LOGD("[LoadLibrary]:%p ,[FreeLibrary]:%p\n",LoadLibrary_addr,FreeLibrary_addr);
-	if(LoadLibrary_addr == 0 || FreeLibrary_addr == 0)
+	GetLastError_addr = get_remote_addr("GetLastError");
+	LOGD("[LoadLibrary]:%p ,[FreeLibrary]:%p ,,[GetLastError]:%p\n",LoadLibrary_addr,FreeLibrary_addr,GetLastError_addr);
+	if(LoadLibrary_addr == 0 || FreeLibrary_addr == 0 || GetLastError_addr == 0)
 	{
 		LOGD("LoadLibrary or FreeLibrary invalid, error=%d", GetLastError());
 		return 0; 		
 	}
 	
 	thread_handle = CreateRemoteThread(proc_handle, NULL, 0, LoadLibrary_addr, map_base, 0, NULL);
-	LOGD("thread_handle: %X\n",thread_handle);
+//	LOGD("thread_handle: %X\n",thread_handle);
 
 //  can't get 64bit return value by GetExitCodeThread	
-//	WaitForSingleObject(thread_handle, INFINITE);
-//	GetExitCodeThread(thread_handle, &ret);
-//	LOGD("thread code: %X\n", ret);
-		
+	WaitForSingleObject(thread_handle, INFINITE);
+	GetExitCodeThread(thread_handle, &ret);
+	LOGD("LoadLibrary return: %X\n", ret);
+	dll_handle = ret
+	if(ret == 0)
+	{
+		thread_handle = CreateRemoteThread(proc_handle, NULL, 0, GetLastError_addr, NULL, 0, NULL);
+		WaitForSingleObject(thread_handle, INFINITE);
+		GetExitCodeThread(thread_handle, &ret);
+		LOGD("GetLastError return: %X\n", ret);
+		goto __exit__;
+	}
+	
+	if(0)	//free_flag
+	{
+		thread_handle = CreateRemoteThread(proc_handle, NULL, 0, FreeLibrary_addr, (void*)dll_handle, 0, NULL);	
+		WaitForSingleObject(thread_handle, INFINITE);
+		GetExitCodeThread(thread_handle, &ret);	
+		LOGD("FreeLibrary return: %X\n", ret);
+		if(ret == 0)
+		{
+			thread_handle = CreateRemoteThread(proc_handle, NULL, 0, GetLastError_addr, NULL, 0, NULL);
+			WaitForSingleObject(thread_handle, INFINITE);
+			GetExitCodeThread(thread_handle, &ret);
+			LOGD("GetLastError return: %X\n", ret);
+			goto __exit__;			
+		}	
+	}
+	
 __exit__:
 	deattach(proc_handle);
 }

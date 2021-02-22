@@ -4,7 +4,8 @@
 #include <stdio.h>      
 #include <stdlib.h>      
 #include <sys/user.h>
-#include <sys/ptrace.h>      
+#include <sys/ptrace.h>
+#include <asm/ptrace.h>
 #include <sys/wait.h>      
 #include <sys/mman.h>      
 #include <dlfcn.h>      
@@ -13,8 +14,11 @@
 #include <string.h>
 #include <stdint.h>
 #include <errno.h>
+#include <elf.h>
+#include <android/log.h>
+#include <sys/uio.h>
 
-#define pt_regs  pt_regs
+//#define pt_regs  user_pt_regs
 #define std_width uint32_t
 
 int ptrace_readdata(pid_t pid,  uint8_t *src, uint8_t *buf, size_t size);

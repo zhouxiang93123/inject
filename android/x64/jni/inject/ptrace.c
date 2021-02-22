@@ -1,8 +1,9 @@
 
 #include "ptrace.h" 
 
-#define LOGD(fmt, ...)  printf(fmt, ##__VA_ARGS__) 
-
+#define LOGD(fmt, ...)  printf(fmt, ##__VA_ARGS__)
+//#define LOG_TAG "INJECT"
+//#define LOGD(fmt, args...)  __android_log_print(ANDROID_LOG_DEBUG,LOG_TAG, fmt, ##args)
 
 /*
 function: ptrace_readdata
@@ -364,7 +365,7 @@ int ptrace_call_wrapper(pid_t pid, const char *func_name, void * addr, std_width
 	}   
     
     //if pc is no zero, call may be failed depend on ptrace_call
-    LOGD("ptrace_call_wrapper[%s]: pid=%d return value=%llX, pc=%llX\n", func_name, pid, ptrace_retval(regs), ptrace_pc(regs)); 
+    LOGD("ptrace_call_wrapper[%s]: pid=%d return value=%lX, pc=%lX\n", func_name, pid, ptrace_retval(regs), ptrace_pc(regs));
 	
 	if(ptrace_pc(regs) != 0)
 		return -1;
